@@ -1,7 +1,4 @@
-const path = require("path");
-require("dotenv").config({
-  path: path.join(__dirname, ".env")
-});
+require("dotenv").config();
 
 const express = require("express");
 const cors = require("cors");
@@ -15,7 +12,7 @@ const orderRoutes = require("./routes/orderRoutes");
 const app = express();
 
 app.use(cors({
-  origin: process.env.CLIENT_URL || "http://localhost:5173"
+  origin: process.env.CLIENT_URL || "*"
 }));
 
 app.use(express.json());
@@ -34,37 +31,41 @@ app.use("/api/orders", orderRoutes);
 
 app.use((err, req, res, next) => {
   console.error(err);
-  res.status(500).json({ message: "Server error" });
+  res.status(500).json({
+    success: false,
+    message: "Server error"
+  });
 });
 
-// Serve React frontend
-const frontendPath = path.join(__dirname, "..", "frontend", "dist");
+let isConnected = false;
 
-app.use(express.static(frontendPath));
-
-app.get("*", (req, res, next) => {
-  if (req.path.startsWith("/api/")) {
-    return next();
+async function connectDB() {
+  if (isConnected) {
+    return;
   }
 
-  res.sendFile(path.join(frontendPath, "index.html"));
-});
-
-const PORT = process.env.PORT || 5000;
-
-async function start() {
-  try {
-    await mongoose.connect(process.env.MONGODB_URI);
-
-    console.log("MongoDB connected");
-
-    app.listen(PORT, () => {
-      console.log(`Server running on http://localhost:${PORT}`);
-    });
-  } catch (error) {
-    console.error("MongoDB connection failed:", error.message);
-    process.exit(1);
+  if (!process.env.MONGODB_URI) {
+    throw new Error("MONGODB_URI environment variable is not set");
   }
+
+  await mongoose.connect(process.env.MONGODB_URI);
+
+  isConnected = true;
+  console.log("MongoDB connected");
 }
 
-start();
+app.use(async (req, res, next) => {
+  try {
+    await connectDB();
+    next();
+  } catch (error) {
+    console.error("MongoDB connection failed:", error.message);
+
+    res.status(500).json({
+      success: false,
+      message: "Database connection failed"
+    });
+  }
+});
+
+module.exports = app;
